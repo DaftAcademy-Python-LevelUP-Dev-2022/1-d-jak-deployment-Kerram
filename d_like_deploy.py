@@ -1,11 +1,10 @@
 from fastapi import FastAPI, Response
 from pydantic import BaseModel
-from multiprocessing import Lock
 import datetime
 
 app = FastAPI()
-lock = Lock()
 event_id = 0
+stored_events = []
 
 
 class Event(BaseModel):
@@ -68,7 +67,7 @@ def validate_day_number(name: str, number: int):
 
 
 @app.put("/events")
-def events(event: Event):
+def add_event(event: Event):
     global event_id
     # Taken from https://stackoverflow.com/questions/16870663/how-do-i-validate-a-date-string-format-in-python
     try:
@@ -76,11 +75,23 @@ def events(event: Event):
     except ValueError:
         return Response(status_code=400)
 
-    try:
-        lock.acquire()
-        local_event_id = event_id
-        event_id += 1
-    finally:
-        lock.release()
+    event_id += 1
+    stored_events.append(StoredEvent(id=event_id, date=event.date, name=event.event, date_added=datetime.date.today().strftime('%Y-%m-%d')))
 
-    return StoredEvent(id=local_event_id, date=event.date, name=event.event, date_added=datetime.date.today().strftime('%Y-%m-%d'))
+    return stored_events[-1]
+
+
+@app.get("/events/{date}")
+def get_events(date: str):
+    global event_id
+    # Taken from https://stackoverflow.com/questions/16870663/how-do-i-validate-a-date-string-format-in-python
+    try:
+        datetime.datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        return Response(status_code=400)
+
+    events = [event for event in stored_events if event.date == date]
+
+    if len(events) == 0:
+        return Response(status_code=404)
+    return events
